@@ -25,39 +25,37 @@ use GuzzleHttp\Exception\GuzzleException;
 
 $Service = "air";
 $Region = "cn-north-1";
-
-// $Version = "2018-01-01";
 $Host = "api-knowledgebase.mlp.cn-beijing.volces.com";
-$ContentType = "application/x-www-form-urlencoded";
+$ContentType = 'application/json';
+$AK = 'ak';
+$SK = 'sk';
+
 /**
  * @throws GuzzleException
  */
 // 第一步：创建一个  API 请求函数。签名计算的过程包含在该函数中。
-function request($method, $query, $header, $ak, $sk, $action, $body)
+function request($apiPath, $method, $query, $header, $body)
 {
 
     // 第二步：创建身份证明。其中的 Service 和 Region 字段是固定的。ak 和 sk 分别代表
     // AccessKeyID 和 SecretAccessKey。同时需要初始化签名结构体。一些签名计算时需要的属性也在这里处理。
     // 初始化身份证明结构体
-    global $Service, $Region, $Host, $Version, $ContentType;
+    global $Service, $Region, $Host, $ContentType, $AK, $SK;
     $credential = [
-        'accessKeyId' => $ak,
-        'secretKeyId' => $sk,
+        'accessKeyId' => $AK,
+        'secretKeyId' => $SK,
         'service' => $Service,
         'region' => $Region,
     ];
 
     // 初始化签名结构体
-    $query = array_merge($query, [
-      'Action' => $action,
-    //   'Version' => $Version
-    ]);
+  
     ksort($query);
     $requestParam = [
         // body是http请求需要的原生body
         'body' => $body,
         'host' => $Host,
-        'path' => '/',
+        'path' => $apiPath,
         'method' => $method,
         'contentType' => $ContentType,
         'date' => gmdate('Ymd\THis\Z'),
@@ -108,16 +106,18 @@ function request($method, $query, $header, $ak, $sk, $action, $body)
     ]);
 }
 
-$now = time();
 
-$requestBody ="";
-
-$AK = 'ak';
-$SK = 'sk';
-
-try {
-    $response = request("GET", [], [], $AK, $SK, "ListUsers", $requestBody);
-    print_r($response->getBody()->getContents());
-} catch (GuzzleException $e) {
-    print_r($e->getMessage());
-}
+// try {
+//     // Prepare request body and parameters as needed
+//     $method = "POST"; // or "GET", depending on your API call
+//     $apiPath = "/api/memory/collection/create"; // example path, update as needed
+//     $payload = json_encode([ /* your payload here */ ]);
+//     $query = [];
+//     $header = [];
+    
+//     // Call the request function, which handles signing
+//     $response = request($method, $query, $header, $AK, $SK, $method, $payload);
+//     print_r($response->getBody()->getContents());
+// } catch (GuzzleException $e) {
+//     print_r($e->getMessage());
+// }
