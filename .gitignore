@@ -1,0 +1,4 @@
+memoryKB/php/vendor/
+memoryKB/php/logs/
+composer.lock
+composer.phar

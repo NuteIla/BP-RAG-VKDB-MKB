@@ -1,0 +1,5 @@
+* READ ME: 
+* 1. PLEASE INSTALL COMPOSER 
+* 2. RUN 'composer require volcengine/volcengine-php-sdk' -- IN SHELL TO CREATE THE VENDOR AND COMPOSER FILES
+* 3. PLEASE GO TO SIGN.PHP TO FILL IN YOUR $AK AND $SK FIELDS
+ */
