@@ -42,14 +42,15 @@ $CustomEntityTypeSchemas = [
                 "IsPrimaryKey" => true,
                 "UseProvided" => true
             ],
+
+            // [
+            //     "PropertyName" => "user_knowledge_point_name", #user_details 
+            //     "PropertyValueType" => "string",
+            //     "Description" => "Specific name of the knowledge point (e.g., 'weather-related vocabulary')",
+            //     "UseProvided" => true
+            // ],
             [
-                "PropertyName" => "knowledge_point_name",
-                "PropertyValueType" => "string",
-                "Description" => "Specific name of the knowledge point (e.g., 'weather-related vocabulary')",
-                "UseProvided" => true
-            ],
-            [
-                "PropertyName" => "good_evaluation_criteria",
+                "PropertyName" => "knowledge_description",
                 "PropertyValueType" => "string",
                 "Description" => "Criteria for judging an answer as 'good'",
                 "UseProvided" => true

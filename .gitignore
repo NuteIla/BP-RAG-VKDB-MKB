@@ -1,4 +1,6 @@
 memoryKB/php/vendor/
+memoryKB/chat_companion_demo/vendor/
+
 memoryKB/php/logs/
 composer.lock
 composer.phar

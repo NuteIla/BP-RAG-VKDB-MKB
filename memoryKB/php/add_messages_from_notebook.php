@@ -35,9 +35,14 @@ $payload = [
             "entity_scope" => [
                 [ // 确保这些字段在 english_knowledge_point schema 中定义为 UseProvided: true 或 IsPrimaryKey: true
                     "id" => 201, // 知识点ID
-                    "knowledge_point_name" => "weather related vocabulary",
-                    "good_evaluation_criteria" => "Student is able to describe weather conditions"
-                ]
+                    // "user_knowledge_point_name" => "user_description",
+                    "knowledge_description" => "user is 23"
+                ],
+                //       [ // 确保这些字段在 english_knowledge_point schema 中定义为 UseProvided: true 或 IsPrimaryKey: true
+                //     "id" => 202, // 知识点ID
+                //     "user_knowledge_point_name" => "user preference",
+                //     "knowledge_description" => "user prefers to chat in a casual meanner"
+                // ]
             ]
         ]
     ]
