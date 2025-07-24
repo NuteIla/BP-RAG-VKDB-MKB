@@ -35,8 +35,8 @@ $payload = [
             "entity_scope" => [
                 [ // 确保这些字段在 english_knowledge_point schema 中定义为 UseProvided: true 或 IsPrimaryKey: true
                     "id" => 201, // 知识点ID
-                    "knowledge_point_name" => "天气相关表达",
-                    "good_evaluation_criteria" => "能够基本正确描述天气情况"
+                    "knowledge_point_name" => "weather related vocabulary",
+                    "good_evaluation_criteria" => "Student is able to describe weather conditions"
                 ]
             ]
         ]
