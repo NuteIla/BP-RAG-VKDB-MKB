@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/sign.php';
-$memory_kb_name = 'english_learning_memory23';
+$memory_kb_name = 'english_learning_memory23313';
 $CustomEventTypeShema = [
     [
         "EventType" => "english_study",
