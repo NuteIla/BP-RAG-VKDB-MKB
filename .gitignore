@@ -4,3 +4,5 @@ memoryKB/chat_companion_demo/vendor/
 memoryKB/php/logs/
 composer.lock
 composer.phar
+eino_go_example/vikingDB_example/.env
+RAG_kb/test.ipynb
