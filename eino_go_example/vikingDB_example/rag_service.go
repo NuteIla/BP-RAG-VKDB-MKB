@@ -6,8 +6,11 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
+	"github.com/cloudwego/eino-ext/components/model/ark"
 	"github.com/cloudwego/eino-ext/components/retriever/volc_vikingdb"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
@@ -17,6 +20,7 @@ import (
 type RAGService struct {
 	retriever retriever.Retriever
 	chain     compose.Runnable[string, []*schema.Document]
+	chatModel model.ChatModel
 }
 
 type RAGConfig struct {
@@ -29,6 +33,10 @@ type RAGConfig struct {
 	ModelName      string
 	TopK           int
 	ScoreThreshold float64
+	// ARK Configuration
+	ARKAPIKey  string
+	ARKBaseURL string
+	ChatModel  string
 }
 
 // HTTP request/response types
@@ -40,6 +48,7 @@ type QueryRequest struct {
 type QueryResponse struct {
 	Documents []*DocumentResponse `json:"documents"`
 	Count     int                 `json:"count"`
+	Answer    string              `json:"answer,omitempty"`
 }
 
 type DocumentResponse struct {
@@ -72,7 +81,7 @@ func NewRAGService(ctx context.Context, config *RAGConfig) (*RAGService, error) 
 		Index:             config.IndexName,
 		EmbeddingConfig: volc_vikingdb.EmbeddingConfig{
 			UseBuiltin:  true,
-			ModelName:   config.ModelName, // e.g., "bge-m3"
+			ModelName:   config.ModelName,
 			UseSparse:   true,
 			DenseWeight: 0.4,
 		},
@@ -88,8 +97,19 @@ func NewRAGService(ctx context.Context, config *RAGConfig) (*RAGService, error) 
 		return nil, fmt.Errorf("failed to create VikingDB retriever: %w", err)
 	}
 
+	// Create ARK chat model
+	arkConfig := &ark.ChatModelConfig{
+		APIKey:  config.ARKAPIKey,
+		BaseURL: config.ARKBaseURL,
+		Model:   config.ChatModel,
+	}
+
+	chatModel, err := ark.NewChatModel(ctx, arkConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create ARK chat model: %w", err)
+	}
+
 	// Create retrieval chain
-	// Create and compile the chain
 	chain := compose.NewChain[string, []*schema.Document]()
 	chain.AppendRetriever(vikingRetriever)
 
@@ -101,6 +121,7 @@ func NewRAGService(ctx context.Context, config *RAGConfig) (*RAGService, error) 
 	return &RAGService{
 		retriever: vikingRetriever,
 		chain:     compiledChain,
+		chatModel: chatModel,
 	}, nil
 }
 
@@ -127,6 +148,45 @@ func (r *RAGService) QueryWithChain(ctx context.Context, query string) ([]*schem
 	return docs, nil
 }
 
+// New method for RAG with chat model
+func (r *RAGService) QueryWithRAG(ctx context.Context, query string) (string, []*schema.Document, error) {
+	// First, retrieve relevant documents
+	docs, err := r.QueryDocuments(ctx, query)
+	if err != nil {
+		return "", nil, fmt.Errorf("document retrieval failed: %w", err)
+	}
+
+	// Build context from retrieved documents
+	var contextParts []string
+	for _, doc := range docs {
+		contextParts = append(contextParts, doc.Content)
+	}
+	context := strings.Join(contextParts, "\n\n")
+
+	// Create prompt with context and query
+	prompt := fmt.Sprintf(`Based on the following context, please answer the question.
+
+Context:
+%s
+
+Question: %s
+
+Answer:`, context, query)
+
+	// Generate response using chat model
+	messages := []*schema.Message{
+		schema.SystemMessage("You are a helpful assistant that answers questions based on the provided context."),
+		schema.UserMessage(prompt),
+	}
+
+	response, err := r.chatModel.Generate(ctx, messages)
+	if err != nil {
+		return "", docs, fmt.Errorf("chat model generation failed: %w", err)
+	}
+
+	return response.Content, docs, nil
+}
+
 func (r *RAGService) AddDocument(ctx context.Context, doc *schema.Document) error {
 	// Note: Document ingestion typically requires separate VikingDB data management APIs
 	// This would involve using VikingDB's data insertion APIs directly
@@ -142,31 +202,63 @@ func (r *RAGService) Query(c *gin.Context) {
 		return
 	}
 
-	// Query documents
-	docs, err := r.QueryDocuments(c.Request.Context(), req.Query)
-	if err != nil {
-		log.Printf("Query failed: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query documents"})
-		return
-	}
+	// Check if we should use RAG (generate answer) or just retrieve documents
+	useRAG := c.Query("rag") == "true"
 
-	// Convert to response format
-	docResponses := make([]*DocumentResponse, len(docs))
-	for i, doc := range docs {
-		docResponses[i] = &DocumentResponse{
-			ID:       doc.ID,
-			Content:  doc.Content,
-			Metadata: doc.MetaData,
-			Score:    doc.Score(),
+	if useRAG {
+		// Use RAG to generate answer
+		answer, docs, err := r.QueryWithRAG(c.Request.Context(), req.Query)
+		if err != nil {
+			log.Printf("RAG query failed: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process RAG query"})
+			return
 		}
-	}
 
-	response := QueryResponse{
-		Documents: docResponses,
-		Count:     len(docs),
-	}
+		// Convert to response format
+		docResponses := make([]*DocumentResponse, len(docs))
+		for i, doc := range docs {
+			docResponses[i] = &DocumentResponse{
+				ID:       doc.ID,
+				Content:  doc.Content,
+				Metadata: doc.MetaData,
+				Score:    doc.Score(),
+			}
+		}
 
-	c.JSON(http.StatusOK, response)
+		response := QueryResponse{
+			Documents: docResponses,
+			Count:     len(docs),
+			Answer:    answer,
+		}
+
+		c.JSON(http.StatusOK, response)
+	} else {
+		// Just retrieve documents
+		docs, err := r.QueryDocuments(c.Request.Context(), req.Query)
+		if err != nil {
+			log.Printf("Query failed: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query documents"})
+			return
+		}
+
+		// Convert to response format
+		docResponses := make([]*DocumentResponse, len(docs))
+		for i, doc := range docs {
+			docResponses[i] = &DocumentResponse{
+				ID:       doc.ID,
+				Content:  doc.Content,
+				Metadata: doc.MetaData,
+				Score:    doc.Score(),
+			}
+		}
+
+		response := QueryResponse{
+			Documents: docResponses,
+			Count:     len(docs),
+		}
+
+		c.JSON(http.StatusOK, response)
+	}
 }
 
 func (r *RAGService) UploadDocument(c *gin.Context) {

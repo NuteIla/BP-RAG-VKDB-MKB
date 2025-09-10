@@ -33,11 +33,18 @@ func main() {
 		ModelName:         getEnvOrDefault("VIKINGDB_MODEL", "bge-m3"),
 		TopK:              getEnvAsInt("VIKINGDB_TOP_K", 5),
 		ScoreThreshold:    getEnvAsFloat("VIKINGDB_SCORE_THRESHOLD", 0.7),
+		// ARK Configuration
+		ARKAPIKey:  os.Getenv("ARK_API_KEY"),
+		ARKBaseURL: getEnvOrDefault("ARK_BASE_URL", "https://ark.ap-southeast.bytepluses.com/api/v3"),
+		ChatModel:  getEnvOrDefault("CHAT_MODEL", "seed-1-6-250615"),
 	}
 
 	// Validate required environment variables
 	if config.VikingDBAK == "" || config.VikingDBSK == "" {
 		log.Fatal("VIKINGDB_AK and VIKINGDB_SK environment variables are required")
+	}
+	if config.ARKAPIKey == "" {
+		log.Fatal("ARK_API_KEY environment variable is required")
 	}
 
 	// Initialize RAG service
