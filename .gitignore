@@ -8,3 +8,4 @@ eino_go_example/vikingDB_example/.env
 RAG_kb/test.ipynb
 eino_go_example/ragKB_example/.env
 eino_go_example/vectorDB_example/.env
+eino_go_example/ragKB_example/rag-backend

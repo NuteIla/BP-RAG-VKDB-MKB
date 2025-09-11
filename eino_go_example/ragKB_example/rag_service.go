@@ -105,6 +105,37 @@ type TableChunkField struct {
 	FieldValue string `json:"field_value"`
 }
 
+// Collection listing types
+type ListCollectionsResponse struct {
+	Code      int                 `json:"code"`
+	Message   string              `json:"message"`
+	RequestID string              `json:"request_id"`
+	Data      ListCollectionsData `json:"data"`
+}
+
+type ListCollectionsData struct {
+	CollectionList []Collection `json:"collection_list"`
+}
+
+type Collection struct {
+	CollectionName string   `json:"collection_name"`
+	Description    string   `json:"description"`
+	PrimaryKey     string   `json:"primary_key"`
+	Fields         []Field  `json:"fields"`
+	IndexNames     []string `json:"index_names"`
+	IndexNum       int      `json:"index_num"`
+	CreateTime     int64    `json:"create_time"`
+	UpdateTime     int64    `json:"update_time"`
+	UpdatePerson   string   `json:"update_person"`
+}
+
+type Field struct {
+	FieldName  string      `json:"field_name"`
+	FieldType  string      `json:"field_type"`
+	DefaultVal interface{} `json:"default_val,omitempty"`
+	Dim        int         `json:"dim,omitempty"`
+}
+
 // HTTP request/response types
 type QueryRequest struct {
 	Query string `json:"query" binding:"required"`
@@ -164,15 +195,19 @@ func (r *RAGService) signRequest(req *http.Request, body []byte) error {
 	hasher.Write(body)
 	contentSha256 := hex.EncodeToString(hasher.Sum(nil))
 
-	// Set required headers
-	req.Header.Set("Content-Type", "application/json")
+	// Set required headers - preserve existing Content-Type if set
+	contentType := req.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/json"
+	}
+	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("Host", req.Host)
 	req.Header.Set("X-Content-Sha256", contentSha256)
 	req.Header.Set("X-Date", timestamp)
 	req.Header.Set("V-Account-Id", r.config.AccountID)
 
 	// Create canonical headers (must be sorted)
-	canonicalHeaders := "content-type:application/json\n" +
+	canonicalHeaders := "content-type:" + contentType + "\n" +
 		"host:" + req.Host + "\n" +
 		"x-content-sha256:" + contentSha256 + "\n" +
 		"x-date:" + timestamp + "\n"
@@ -224,42 +259,52 @@ func hmacSHA256(key []byte, data string) []byte {
 }
 
 // Search knowledge using ragKB API
-func (r *RAGService) SearchKnowledge(ctx context.Context, query string, limit int) ([]*schema.Document, error) {
+func (r *RAGService) SearchKnowledge(ctx context.Context, query string) ([]*schema.Document, error) {
 	// Prepare request payload
-	reqPayload := SearchKnowledgeRequest{
-		Project: r.config.ProjectName,
-		Name:    r.config.CollectionName,
-		Query:   query,
-		Limit:   limit,
-		PreProcessing: PreProcessing{
-			NeedInstruction:  true,
-			Rewrite:          false,
-			ReturnTokenUsage: true,
-			Messages: []Message{
-				{Role: "system", Content: ""},
-				{Role: "user", Content: query},
+	payload := map[string]interface{}{
+		"project": r.config.ProjectName,
+		"name":    r.config.CollectionName, // Changed from "collection_name" to "name"
+		"query":   query,
+		"limit":   10,
+		"pre_processing": map[string]interface{}{
+			"need_instruction":   true, // Changed to match Python notebook
+			"rewrite":            false,
+			"return_token_usage": true, // Changed to match Python notebook
+			"messages": []interface{}{ // Added proper message structure
+				map[string]interface{}{
+					"role":    "system",
+					"content": "",
+				},
+				map[string]interface{}{
+					"role":    "user",
+					"content": query,
+				},
 			},
 		},
-		DenseWeight: 0.5,
-		PostProcessing: PostProcessing{
-			GetAttachmentLink:   true,
-			ChunkGroup:          true,
-			RerankOnlyChunk:     false,
-			RerankSwitch:        false,
-			ChunkDiffusionCount: 0,
+		"dense_weight": 0.5,
+		"post_processing": map[string]interface{}{
+			"get_attachment_link":   true, // Changed to match Python notebook
+			"chunk_group":           true, // Changed to match Python notebook
+			"rerank_only_chunk":     false,
+			"rerank_switch":         false, // Changed to match Python notebook
+			"chunk_diffusion_count": 0,
 		},
 	}
 
-	log.Printf("ragKB request: project=%s, collection=%s, query=%s", r.config.ProjectName, r.config.CollectionName, query)
+	// Log the collection name being used
+	log.Printf("ragKB API Request - Project: %s, Collection: %s, Query: %s", r.config.ProjectName, r.config.CollectionName, query)
 
 	// Marshal request body
-	body, err := json.Marshal(reqPayload)
+	body, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, fmt.Errorf("failed to marshal request: %v", err)
 	}
 
+	// Log the full request payload
+	log.Printf("ragKB API Request Payload: %s", string(body))
+
 	// Create HTTP request
-	url := "http://" + r.config.KnowledgeBaseDomain + "/api/knowledge/collection/search_knowledge"
+	url := "http://" + r.config.KnowledgeBaseDomain + "/api/knowledge/collection/search_knowledge" // Make sure this is HTTP, not HTTPS
 	log.Printf("ragKB API URL: %s", url)
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(body))
 	if err != nil {
@@ -346,18 +391,18 @@ func (r *RAGService) SearchKnowledge(ctx context.Context, query string, limit in
 
 // Core retrieval methods
 func (r *RAGService) QueryDocuments(ctx context.Context, query string) ([]*schema.Document, error) {
-	return r.SearchKnowledge(ctx, query, 10)
+	return r.SearchKnowledge(ctx, query)
 }
 
 func (r *RAGService) QueryWithChain(ctx context.Context, query string) ([]*schema.Document, error) {
 	// For compatibility, use the same search method
-	return r.SearchKnowledge(ctx, query, 10)
+	return r.SearchKnowledge(ctx, query)
 }
 
 // RAG with chat model
 func (r *RAGService) QueryWithRAG(ctx context.Context, query string) (string, []*schema.Document, error) {
 	// First, retrieve relevant documents using ragKB
-	docs, err := r.SearchKnowledge(ctx, query, 10)
+	docs, err := r.SearchKnowledge(ctx, query)
 	if err != nil {
 		return "", nil, fmt.Errorf("document retrieval failed: %w", err)
 	}
@@ -394,9 +439,52 @@ Answer:`, context, query)
 }
 
 func (r *RAGService) AddDocument(ctx context.Context, doc *schema.Document) error {
-	// Note: Document ingestion requires ragKB data management APIs
-	log.Printf("Document ingestion not implemented in this example: %+v", doc)
-	return fmt.Errorf("document ingestion requires ragKB data management APIs")
+	// This would typically add to ragKB
+	// For now, return a not implemented error
+	return fmt.Errorf("document addition not implemented - requires ragKB data management APIs")
+}
+
+// ListCollections retrieves all collections from VikingDB
+func (r *RAGService) ListCollections(ctx context.Context) (*ListCollectionsResponse, error) {
+	method := "POST"
+	path := "/api/knowledge/collection/list"
+
+	// Create HTTP request
+	url := fmt.Sprintf("http://%s%s", r.config.KnowledgeBaseDomain, path)
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %v", err)
+	}
+
+	// Sign the request
+	if err := r.signRequest(req, nil); err != nil {
+		return nil, fmt.Errorf("failed to sign request: %v", err)
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("Failed to list collections: %v", err)
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result ListCollectionsResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %v", err)
+	}
+
+	log.Printf("Successfully listed collections: %d collections found", len(result.Data.CollectionList))
+	return &result, nil
 }
 
 // HTTP Handlers
@@ -540,4 +628,19 @@ func (r *RAGService) DeleteDocument(c *gin.Context) {
 		"message":     "This requires ragKB data management APIs",
 		"document_id": documentID,
 	})
+}
+
+// ListCollectionsHandler handles HTTP requests to list collections
+func (r *RAGService) ListCollectionsHandler(c *gin.Context) {
+	collectionsResp, err := r.ListCollections(c.Request.Context())
+	if err != nil {
+		log.Printf("Failed to list collections: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to list collections",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, collectionsResp)
 }

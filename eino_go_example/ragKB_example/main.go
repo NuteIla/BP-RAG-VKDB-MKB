@@ -73,6 +73,7 @@ func main() {
 	r.POST("/documents", ragService.UploadDocument)
 	r.GET("/documents", ragService.ListDocuments)
 	r.DELETE("/documents/:id", ragService.DeleteDocument)
+	r.GET("/api/collections", ragService.ListCollectionsHandler)
 
 	// Start server
 	port := getEnvOrDefault("PORT", "8080")
